@@ -23,4 +23,13 @@ if (result.status !== 0) {
   );
 }
 
+if (existsSync('apps/api/prisma/schema.prisma')) {
+  const prismaResult = spawnSync(npmCommand, ['run', 'db:generate'], { stdio: 'inherit' });
+  if (prismaResult.status !== 0) {
+    console.warn(
+      '\n[prepare] Could not generate Prisma client. Run `npm run db:generate` manually.\n'
+    );
+  }
+}
+
 process.exit(0);

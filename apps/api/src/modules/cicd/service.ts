@@ -128,7 +128,7 @@ export class CICDService {
       void githubClient.dispatch(workflow.branch).catch(() => false);
     }
 
-    void this.progressRun(run.id, workflow.id).catch((err) => {
+    void this.progressRun(run.id, workflow.id).catch((err: unknown) => {
       console.error(`CI/CD run ${run.id} progression error:`, err);
     });
 

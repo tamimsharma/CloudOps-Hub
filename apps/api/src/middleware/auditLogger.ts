@@ -67,7 +67,7 @@ export function auditLogger(req: AuthenticatedRequest, res: Response, next: Next
         success: res.statusCode < 400,
         errorMessage: res.statusCode >= 400 && typeof body === 'string' ? body.slice(0, 1000) : undefined,
       },
-    }).catch((err) => {
+    }).catch((err: unknown) => {
       console.error('Audit log failed:', err);
     });
 

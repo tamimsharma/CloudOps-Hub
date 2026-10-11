@@ -1,8 +1,11 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
+  # Manual trigger via Actions tab ("Run workflow").
+  # Once AWS credentials and EC2 secrets are configured in repository secrets,
+  # uncomment the push trigger below to enable automatic continuous deployment:
+  # push:
+  #   branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -77,6 +80,15 @@ jobs:
         with:
           terraform_version: 1.6.6
 
+      - name: Validate AWS credentials
+        env:
+          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        run: |
+          if [ -z "$AWS_KEY" ]; then
+            echo "::error::AWS_ACCESS_KEY_ID is missing in GitHub repository secrets. Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -94,7 +106,7 @@ jobs:
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform apply
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: terraform apply -input=false -auto-approve tfplan
 
   deploy-ec2:
@@ -109,6 +121,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate SSH and EC2 secrets
+        env:
+          SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
+          SSH_HOST: ${{ secrets.AWS_EC2_HOST }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$SSH_HOST" ]; then
+            echo "::error::AWS_SSH_KEY or AWS_EC2_HOST is missing in GitHub repository secrets. Please configure them before deploying to EC2."
+            exit 1
+          fi
 
       - name: Configure SSH
         env:
