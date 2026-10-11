@@ -1,0 +1,39 @@
+# OpenSearch single-node development configuration for CloudOps Hub.
+# docker-compose passes discovery.type / memory options via environment
+# variables; this file documents the settings used for local development.
+
+cluster.name: cloudops-opensearch
+node.name: cloudops-opensearch-1
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# Single-node development cluster (no quorum, no master election).
+discovery.type: single-node
+
+# Security is disabled for local development only.
+# Never use this setting in production; enable the security plugin and rotate
+# the admin password (OPENSEARCH_INITIAL_ADMIN_PASSWORD) instead.
+plugins.security.disabled: true
+plugins.security.allow_default_init_security_index: false
+
+# Keep the JVM heap modest in dev; overridden by OPENSEARCH_JAVA_OPTS.
+# indices.retention is handled by the Index State Management (ISM) policy
+# described in docs/deployment.md: logs-* indices roll over daily and are
+# deleted after 14 days.
+plugins.index_state_management.enabled: true
+
+# Retention related limits for log/observability data.
+action.auto_create_index: "logs-*,metrics-*,opensearch-*,.opendistro-*"
+indices.memory.index_buffer_size: 10%
+indices.queries.cache.size: 5%
+
+# Thread pools tuned for a small single node.
+thread_pool.write.size: 4
+thread_pool.search.size: 4
+
+# Avoid shard allocation surprises on a single node.
+cluster.routing.allocation.disk.threshold_enabled: true
+cluster.routing.allocation.disk.watermark.low: 85%
+cluster.routing.allocation.disk.watermark.high: 90%
+cluster.routing.allocation.disk.watermark.flood_stage: 95%

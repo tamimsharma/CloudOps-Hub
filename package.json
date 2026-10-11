@@ -1,0 +1,51 @@
+{
+  "name": "cloudops-hub",
+  "version": "1.0.0",
+  "description": "Intelligent Cloud Operations Platform - Unified web platform for cloud engineering operations",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build:packages && concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build:packages && npm run build:apps",
+    "build:packages": "npm run build --workspace=packages/types && npm run build --workspace=packages/shared && npm run build --workspace=packages/config",
+    "build:apps": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
+    "start:api": "npm run start --workspace=apps/api",
+    "lint": "npm run lint --workspaces",
+    "lint:api": "npm run lint --workspace=apps/api",
+    "typecheck": "npm run typecheck --workspaces",
+    "typecheck:api": "npm run typecheck --workspace=apps/api",
+    "test": "npm run test --workspaces",
+    "test:api": "npm run test --workspace=apps/api",
+    "db:generate": "npm run db:generate --workspace=apps/api",
+    "db:push": "npm run build:packages && npm run db:push --workspace=apps/api",
+    "db:migrate": "npm run build:packages && npm run db:migrate --workspace=apps/api",
+    "db:seed": "npm run build:packages && npm run db:seed --workspace=apps/api",
+    "db:studio": "npm run db:studio --workspace=apps/api",
+    "db:reset": "npm run db:push && npm run db:seed",
+    "docker:up": "docker compose --profile full up -d",
+    "docker:down": "docker compose --profile full --profile app down",
+    "docker:logs": "docker compose --profile full --profile app logs -f",
+    "docker:app": "docker compose --profile app up --build -d",
+    "prepare": "node scripts/prepare.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^7.1.0",
+    "@typescript-eslint/parser": "^7.1.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "packageManager": "npm@10.2.3"
+}

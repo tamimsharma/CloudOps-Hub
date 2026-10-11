@@ -1,0 +1,25 @@
+{
+  "name": "@cloudops-hub/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities and constants for CloudOps Hub",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@cloudops-hub/types": "*",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.2",
+    "vitest": "^1.0.0"
+  }
+}

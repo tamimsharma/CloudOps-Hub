@@ -1,0 +1,167 @@
+# CloudOps Hub alert rules
+# Loaded by Prometheus via the rule_files glob in prometheus.yml.
+
+groups:
+  - name: high_cpu
+    interval: 30s
+    rules:
+      - alert: HighCpuUsage
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | printf \"%.1f\" }}% for the last 10 minutes (threshold 85%)."
+
+      - alert: CriticalCpuUsage
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 95
+        for: 5m
+        labels:
+          severity: critical
+          category: capacity
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | printf \"%.1f\" }}% for the last 5 minutes (threshold 95%)."
+
+  - name: high_memory
+    interval: 30s
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+        for: 10m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | printf \"%.1f\" }}% (threshold 90%)."
+
+      - alert: OutOfMemoryImminent
+        expr: |
+          100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 97
+        for: 3m
+        labels:
+          severity: critical
+          category: capacity
+        annotations:
+          summary: "Memory exhaustion imminent on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | printf \"%.1f\" }}% and only swap remains."
+
+  - name: high_disk
+    interval: 60s
+    rules:
+      - alert: HighDiskUsage
+        expr: |
+          100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "Disk usage high on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: "Filesystem {{ $labels.mountpoint }} is {{ $value | printf \"%.1f\" }}% full."
+
+      - alert: DiskAlmostFull
+        expr: |
+          100 * (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > 95
+        for: 5m
+        labels:
+          severity: critical
+          category: capacity
+        annotations:
+          summary: "Disk almost full on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: "Filesystem {{ $labels.mountpoint }} is {{ $value | printf \"%.1f\" }}% full."
+
+  - name: api_down
+    interval: 15s
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "CloudOps API target is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for 2 minutes."
+
+      - alert: ApiHealthCheckFailing
+        expr: probe_success{job="api-health"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "CloudOps API health check failing"
+          description: "GET /health is failing on {{ $labels.instance }}."
+
+  - name: high_error_rate
+    interval: 30s
+    rules:
+      - alert: HighApiErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="api",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 0.001)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: reliability
+        annotations:
+          summary: "API 5xx error rate above 5%"
+          description: "{{ $value | printf \"%.2f\" }}% of requests returned 5xx over the last 5 minutes."
+
+      - alert: CriticalApiErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="api",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 0.001)
+          ) > 0.25
+        for: 2m
+        labels:
+          severity: critical
+          category: reliability
+        annotations:
+          summary: "API 5xx error rate above 25%"
+          description: "{{ $value | printf \"%.2f\" }}% of requests returned 5xx over the last 5 minutes."
+
+  - name: container_restart
+    interval: 30s
+    rules:
+      - alert: ContainerRestarting
+        expr: increase(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: stability
+        annotations:
+          summary: "Container {{ $labels.container }} restarted"
+          description: "Pod {{ $labels.pod }} restarted {{ $value | printf \"%.0f\" }} times in 15 minutes."
+
+      - alert: ApiProcessRestarted
+        expr: changes(process_start_time_seconds{job="api"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: stability
+        annotations:
+          summary: "CloudOps API process restarted"
+          description: "The API process on {{ $labels.instance }} restarted in the last 15 minutes (possible crash loop)."
+
+      - alert: ContainerOOMKilled
+        expr: container_oom_events_total > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: stability
+        annotations:
+          summary: "Container {{ $labels.name }} was OOM killed"
+          description: "{{ $value }} OOM events recorded for container {{ $labels.name }}."

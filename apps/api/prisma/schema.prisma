@@ -1,0 +1,627 @@
+// Prisma Schema for CloudOps Hub
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User and Authentication
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String
+  passwordHash    String
+  role            Role      @default(VIEWER)
+  isActive        Boolean   @default(true)
+  lastLoginAt     DateTime?
+  refreshTokenHash String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  refreshTokens   RefreshToken[]
+  deployments     Deployment[]        @relation("DeploymentUser")
+  acknowledgedAlerts Alert[]         @relation("AlertAcknowledgedBy")
+  resolvedAlerts  Alert[]            @relation("AlertResolvedBy")
+  assignedIncidents Incident[]       @relation("IncidentAssignedTo")
+  acknowledgedIncidents Incident[]   @relation("IncidentAcknowledgedBy")
+  resolvedIncidents Incident[]       @relation("IncidentResolvedBy")
+  closedIncidents Incident[]         @relation("IncidentClosedBy")
+  incidentNotes   IncidentNote[]
+  generatedReports Report[]          @relation("ReportGeneratedBy")
+  auditLogs       AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+enum Role {
+  ADMIN
+  ENGINEER
+  VIEWER
+}
+
+// Infrastructure Resources
+model Resource {
+  id              String      @id @default(uuid())
+  name            String
+  type            ResourceType
+  provider        String
+  environment     String
+  region          String
+  status          ResourceStatus @default(UNKNOWN)
+  health          HealthStatus @default(UNKNOWN)
+  cpuUsage        Float?
+  memoryUsage     Float?
+  diskUsage       Float?
+  networkIn       Float?
+  networkOut      Float?
+  tags            Json        @default("{}")
+  metadata        Json        @default("{}")
+  lastHealthCheckAt DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  deployments     Deployment[]
+  alerts          Alert[]
+  incidents       Incident[]
+  costEstimates   CostEstimate[]
+
+  @@index([type])
+  @@index([provider])
+  @@index([environment])
+  @@index([region])
+  @@index([status])
+  @@index([health])
+  @@index([createdAt])
+}
+
+enum ResourceType {
+  EC2_INSTANCE
+  DOCKER_CONTAINER
+  KUBERNETES_CLUSTER
+  KUBERNETES_POD
+  KUBERNETES_SERVICE
+  KUBERNETES_DEPLOYMENT
+  S3_BUCKET
+  DATABASE
+  LOAD_BALANCER
+  APPLICATION
+}
+
+enum ResourceStatus {
+  RUNNING
+  STOPPED
+  PENDING
+  ERROR
+  UNKNOWN
+}
+
+enum HealthStatus {
+  HEALTHY
+  WARNING
+  DEGRADED
+  CRITICAL
+  UNKNOWN
+}
+
+// Deployments
+model Deployment {
+  id                   String           @id @default(uuid())
+  name                 String
+  image                String
+  tag                  String
+  port                 Int
+  environmentVariables Json             @default("{}")
+  cpuLimit             String
+  memoryLimit          String
+  replicas             Int              @default(1)
+  status               DeploymentStatus @default(PENDING)
+  resourceId           String?
+  deployedBy           String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  errorMessage         String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  resource             Resource?        @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  user                 User?            @relation("DeploymentUser", fields: [deployedBy], references: [id])
+
+  @@index([status])
+  @@index([deployedBy])
+  @@index([resourceId])
+  @@index([createdAt])
+}
+
+enum DeploymentStatus {
+  PENDING
+  BUILDING
+  DEPLOYING
+  RUNNING
+  FAILED
+  STOPPED
+  ROLLED_BACK
+}
+
+// Kubernetes
+model KubernetesCluster {
+  id              String      @id @default(uuid())
+  name            String
+  provider        String
+  region          String
+  version         String
+  status          ResourceStatus @default(UNKNOWN)
+  health          HealthStatus @default(UNKNOWN)
+  nodeCount       Int         @default(0)
+  cpuCapacity     Int         @default(0)
+  memoryCapacity  Int         @default(0)
+  endpoint        String
+  kubeconfigRef   String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  workloads       KubernetesWorkload[]
+
+  @@index([provider])
+  @@index([region])
+  @@index([status])
+  @@index([health])
+}
+
+model KubernetesWorkload {
+  id                 String      @id @default(uuid())
+  clusterId          String
+  namespace          String
+  name               String
+  kind               WorkloadKind
+  desiredReplicas    Int
+  availableReplicas  Int
+  readyReplicas      Int
+  cpuUsage           Float?
+  memoryUsage        Float?
+  restartCount       Int         @default(0)
+  status             ResourceStatus @default(UNKNOWN)
+  health             HealthStatus @default(UNKNOWN)
+  labels             Json        @default("{}")
+  annotations        Json        @default("{}")
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  cluster            KubernetesCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+
+  @@index([clusterId])
+  @@index([namespace])
+  @@index([kind])
+  @@index([status])
+  @@index([health])
+}
+
+enum WorkloadKind {
+  Deployment
+  StatefulSet
+  DaemonSet
+  Job
+  CronJob
+}
+
+// Metrics (metadata only, actual data in Prometheus)
+model MetricSnapshot {
+  id           String      @id @default(uuid())
+  resourceId   String
+  resourceType ResourceType
+  metricType   MetricType
+  value        Float
+  unit         String
+  timestamp    DateTime
+  labels       Json        @default("{}")
+  createdAt    DateTime    @default(now())
+
+  @@index([resourceId])
+  @@index([resourceType])
+  @@index([metricType])
+  @@index([timestamp])
+}
+
+enum MetricType {
+  CPU_USAGE
+  MEMORY_USAGE
+  DISK_USAGE
+  NETWORK_IN
+  NETWORK_OUT
+  CONTAINER_CPU
+  CONTAINER_MEMORY
+  K8S_POD_CPU
+  K8S_POD_MEMORY
+  K8S_NODE_CPU
+  K8S_NODE_MEMORY
+}
+
+// Logs (metadata only, actual data in OpenSearch)
+model LogEntry {
+  id           String       @id @default(uuid())
+  timestamp    DateTime
+  severity     LogSeverity
+  source       String
+  resourceId   String?
+  resourceType ResourceType?
+  message      String
+  fields       Json         @default("{}")
+  traceId      String?
+  spanId       String?
+  createdAt    DateTime     @default(now())
+
+  @@index([timestamp])
+  @@index([severity])
+  @@index([source])
+  @@index([resourceId])
+  @@index([traceId])
+}
+
+enum LogSeverity {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+  FATAL
+}
+
+// Alerts
+model Alert {
+  id              String        @id @default(uuid())
+  title           String
+  description     String
+  severity        AlertSeverity
+  source          String
+  resourceId      String?
+  resourceType    ResourceType?
+  status          AlertStatus   @default(FIRING)
+  acknowledgedBy  String?
+  acknowledgedAt  DateTime?
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  metadata        Json          @default("{}")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  resource        Resource?     @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  acknowledgedByUser User?      @relation("AlertAcknowledgedBy", fields: [acknowledgedBy], references: [id])
+  resolvedByUser  User?         @relation("AlertResolvedBy", fields: [resolvedBy], references: [id])
+  incidents       Incident[]    @relation("IncidentAlerts")
+
+  @@index([severity])
+  @@index([status])
+  @@index([source])
+  @@index([resourceId])
+  @@index([createdAt])
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  FIRING
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+// Incidents
+model Incident {
+  id                   String            @id @default(uuid())
+  title                String
+  description          String
+  severity             IncidentSeverity
+  status               IncidentStatus    @default(OPEN)
+  affectedResourceId   String?
+  affectedResourceType ResourceType?
+  assignedTo           String?
+  acknowledgedBy       String?
+  acknowledgedAt       DateTime?
+  resolvedBy           String?
+  resolvedAt           DateTime?
+  closedBy             String?
+  closedAt             DateTime?
+  rootCause            String?
+  resolution           String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  affectedResource     Resource?         @relation(fields: [affectedResourceId], references: [id], onDelete: SetNull)
+  assignedToUser       User?             @relation("IncidentAssignedTo", fields: [assignedTo], references: [id])
+  acknowledgedByUser   User?             @relation("IncidentAcknowledgedBy", fields: [acknowledgedBy], references: [id])
+  resolvedByUser       User?             @relation("IncidentResolvedBy", fields: [resolvedBy], references: [id])
+  closedByUser         User?             @relation("IncidentClosedBy", fields: [closedBy], references: [id])
+  alerts               Alert[]           @relation("IncidentAlerts")
+  timeline             IncidentTimelineEvent[]
+  notes                IncidentNote[]
+
+  @@index([severity])
+  @@index([status])
+  @@index([assignedTo])
+  @@index([affectedResourceId])
+  @@index([createdAt])
+}
+
+enum IncidentSeverity {
+  SEV1
+  SEV2
+  SEV3
+  SEV4
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+model IncidentTimelineEvent {
+  id           String                 @id @default(uuid())
+  incidentId   String
+  type         TimelineEventType
+  description  String
+  userId       String?
+  metadata     Json                   @default("{}")
+  createdAt    DateTime               @default(now())
+
+  incident     Incident               @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@index([createdAt])
+}
+
+enum TimelineEventType {
+  CREATED
+  ACKNOWLEDGED
+  INVESTIGATING
+  NOTE_ADDED
+  STATUS_CHANGED
+  RESOLVED
+  CLOSED
+}
+
+model IncidentNote {
+  id        String   @id @default(uuid())
+  incidentId String
+  // Author is optional: demo/system notes may have no registered operator.
+  userId    String?
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  incident  Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([incidentId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Cost Estimation
+model CostEstimate {
+  id            String   @id @default(uuid())
+  resourceId    String
+  resourceType  ResourceType
+  provider      String
+  service       String
+  dailyCost     Float
+  monthlyCost   Float
+  currency      String   @default("USD")
+  breakdown     Json     @default("[]")
+  assumptions   String[]
+  estimatedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  resource      Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId])
+  @@index([provider])
+  @@index([service])
+  @@index([estimatedAt])
+}
+
+// Cloud Accounts
+model CloudAccount {
+  id            String         @id @default(uuid())
+  name          String
+  provider      CloudProvider
+  accountId     String
+  region        String
+  credentialsRef String
+  status        CloudAccountStatus @default(DISCONNECTED)
+  lastSyncedAt  DateTime?
+  errorMessage  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([provider, accountId])
+  @@index([provider])
+  @@index([status])
+}
+
+enum CloudProvider {
+  AWS
+  AZURE
+  GCP
+}
+
+enum CloudAccountStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+// CI/CD
+model CICDWorkflow {
+  id              String       @id @default(uuid())
+  name            String
+  repository      String
+  branch          String
+  trigger         CICDTrigger
+  status          CICDStatus   @default(PENDING)
+  lastRunId       String?
+  lastRunAt       DateTime?
+  lastRunStatus   CICDStatus?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  runs            CICDRun[]
+
+  @@index([repository])
+  @@index([status])
+}
+
+enum CICDTrigger {
+  PUSH
+  PR
+  MANUAL
+  SCHEDULE
+}
+
+enum CICDStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILURE
+  CANCELLED
+}
+
+model CICDRun {
+  id            String       @id @default(uuid())
+  workflowId    String
+  runNumber     Int
+  trigger       String
+  branch        String
+  commitSha     String
+  status        CICDStatus   @default(PENDING)
+  startedAt     DateTime
+  completedAt   DateTime?
+  duration      Int?
+  url           String
+  createdAt     DateTime     @default(now())
+
+  workflow      CICDWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  jobs          CICDJob[]
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model CICDJob {
+  id        String     @id @default(uuid())
+  runId     String
+  name      String
+  status    CICDStatus @default(PENDING)
+  startedAt DateTime
+  completedAt DateTime?
+  createdAt DateTime   @default(now())
+
+  run       CICDRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  steps     CICDStep[]
+
+  @@index([runId])
+  @@index([status])
+}
+
+model CICDStep {
+  id        String     @id @default(uuid())
+  jobId     String
+  name      String
+  status    CICDStatus @default(PENDING)
+  startedAt DateTime
+  completedAt DateTime?
+  output    String?
+  createdAt DateTime   @default(now())
+
+  job       CICDJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([status])
+}
+
+// Reports
+model Report {
+  id           String        @id @default(uuid())
+  name         String
+  type         ReportType
+  // Author is optional: seeded/system reports may predate any registered account.
+  generatedBy  String?
+  status       ReportStatus  @default(PENDING)
+  parameters   Json          @default("{}")
+  fileUrl      String?
+  errorMessage String?
+  completedAt  DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  generatedByUser User?      @relation("ReportGeneratedBy", fields: [generatedBy], references: [id])
+
+  @@index([type])
+  @@index([status])
+  @@index([generatedBy])
+  @@index([createdAt])
+}
+
+enum ReportType {
+  INVENTORY
+  COST_ANALYSIS
+  INCIDENT_SUMMARY
+  DEPLOYMENT_HISTORY
+  HEALTH_REPORT
+  COMPLIANCE
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+// Audit Logs
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String
+  action       String
+  resourceType String
+  resourceId   String?
+  oldValues    Json?
+  newValues    Json?
+  ipAddress    String?
+  userAgent    String?
+  success      Boolean  @default(true)
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([resourceId])
+  @@index([createdAt])
+}

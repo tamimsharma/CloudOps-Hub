@@ -1,0 +1,20 @@
+# Grafana dashboard provisioning
+#
+# docker-compose mounts ./infrastructure/grafana/dashboards to
+# /etc/grafana/provisioning/dashboards, and this provider file lives in that
+# same folder. The provider path therefore points at that mount so that
+# cloudops-overview.json (same directory) is discovered.
+apiVersion: 1
+
+providers:
+  - name: CloudOps Hub
+    orgId: 1
+    folder: CloudOps Hub
+    folderUid: cloudops
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

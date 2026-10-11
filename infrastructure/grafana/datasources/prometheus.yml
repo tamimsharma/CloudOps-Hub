@@ -1,0 +1,20 @@
+# Grafana datasource provisioning
+# Mounted by docker-compose as /etc/grafana/provisioning/datasources/prometheus.yml
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    uid: prometheus
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST
+      manageAlerts: true

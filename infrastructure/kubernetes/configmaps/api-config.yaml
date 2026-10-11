@@ -1,0 +1,55 @@
+# Shared application configuration for the cloudops namespace.
+# NOTE: this ConfigMap contains non-sensitive configuration only. In production,
+# mount credentials (JWT_SECRET, database password, OpenSearch password) from a
+# Kubernetes Secret instead of a ConfigMap - see docs/security.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: cloudops
+  labels:
+    app.kubernetes.io/name: cloudops
+    app.kubernetes.io/component: config
+    app.kubernetes.io/part-of: cloudops
+    app.kubernetes.io/managed-by: kubectl
+data:
+  # Application
+  NODE_ENV: "production"
+  PORT: "4000"
+  API_URL: "http://cloudops.local/api"
+  WEB_URL: "http://cloudops.local"
+
+  # Database (used by the api deployment)
+  DATABASE_URL: "postgresql://cloudops:cloudops@postgres:5432/cloudops_hub?schema=public"
+  POSTGRES_USER: "cloudops"
+  POSTGRES_PASSWORD: "cloudops"
+  POSTGRES_DB: "cloudops_hub"
+
+  # Authentication (placeholder values - replace via Secret in production)
+  JWT_SECRET: "change-me-min-32-chars-in-production-please"
+  JWT_EXPIRES_IN: "15m"
+  JWT_REFRESH_SECRET: "change-me-refresh-min-32-chars-in-prod"
+  JWT_REFRESH_EXPIRES_IN: "7d"
+  BCRYPT_ROUNDS: "12"
+
+  # Integrations
+  PROMETHEUS_URL: "http://prometheus:9090"
+  GRAFANA_URL: "http://grafana:3000"
+  OPENSEARCH_URL: "http://opensearch:9200"
+  OPENSEARCH_USERNAME: "admin"
+  OPENSEARCH_PASSWORD: "admin"
+  DOCKER_HOST: "unix:///var/run/docker.sock"
+
+  # CORS / rate limiting
+  CORS_ORIGIN: "http://cloudops.local"
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+
+  # Web build/runtime configuration
+  VITE_API_URL: "http://cloudops.local/api"
+  VITE_WS_URL: "ws://cloudops.local/api"
+
+  # Grafana bootstrap (read by the grafana deployment)
+  GF_SECURITY_ADMIN_USER: "admin"
+  GF_SECURITY_ADMIN_PASSWORD: "admin"
+  GF_USERS_ALLOW_SIGN_UP: "false"

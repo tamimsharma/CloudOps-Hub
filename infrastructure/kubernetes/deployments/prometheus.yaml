@@ -1,0 +1,224 @@
+# Prometheus configuration (inline ConfigMap) + Deployment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: cloudops
+  labels:
+    app.kubernetes.io/name: cloudops-prometheus
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: cloudops
+    app.kubernetes.io/managed-by: kubectl
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        stack: cloudops
+        environment: kubernetes
+
+    rule_files:
+      - /etc/prometheus/alerts/*.yml
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ['localhost:9090']
+
+      - job_name: api
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names: ['cloudops']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: api
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+
+      - job_name: grafana
+        static_configs:
+          - targets: ['grafana:3000']
+
+      - job_name: opensearch
+        static_configs:
+          - targets: ['opensearch:9200']
+        metrics_path: /_prometheus/metrics
+  cloudops-alerts.yml: |
+    groups:
+      - name: high_cpu
+        rules:
+          - alert: HighCpuUsage
+            expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU usage on {{ $labels.instance }}"
+      - name: high_memory
+        rules:
+          - alert: HighMemoryUsage
+            expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 90
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage on {{ $labels.instance }}"
+      - name: api_down
+        rules:
+          - alert: ApiDown
+            expr: up{job="api"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "CloudOps API target is down"
+      - name: high_error_rate
+        rules:
+          - alert: HighApiErrorRate
+            expr: |
+              sum(rate(http_requests_total{job="api",status=~"5.."}[5m]))
+              / clamp_min(sum(rate(http_requests_total{job="api"}[5m])), 0.001) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "API 5xx error rate above 5%"
+      - name: container_restart
+        rules:
+          - alert: ContainerRestarting
+            expr: increase(kube_pod_container_status_restarts_total[15m]) > 0
+            labels:
+              severity: warning
+            annotations:
+              summary: "Container {{ $labels.container }} restarted"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: cloudops
+  labels:
+    app.kubernetes.io/name: cloudops-prometheus
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: cloudops
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudops-prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudops-prometheus
+        app.kubernetes.io/component: monitoring
+        app.kubernetes.io/part-of: cloudops
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.48.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --web.enable-lifecycle
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: api-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            # The ConfigMap tree contains prometheus.yml and
+            # alerts/cloudops-alerts.yml, matching the rule_files glob.
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: prometheus-data
+              mountPath: /prometheus
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+            items:
+              - key: prometheus.yml
+                path: prometheus.yml
+              - key: cloudops-alerts.yml
+                path: alerts/cloudops-alerts.yml
+        - name: prometheus-data
+          emptyDir: {}
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: cloudops
+  labels:
+    app.kubernetes.io/name: cloudops-prometheus
+    app.kubernetes.io/part-of: cloudops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cloudops-prometheus
+  labels:
+    app.kubernetes.io/name: cloudops-prometheus
+    app.kubernetes.io/part-of: cloudops
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cloudops-prometheus
+  labels:
+    app.kubernetes.io/name: cloudops-prometheus
+    app.kubernetes.io/part-of: cloudops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cloudops-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: cloudops

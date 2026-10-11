@@ -1,0 +1,56 @@
+# Prometheus configuration for CloudOps Hub
+# Mounted by docker-compose as /etc/prometheus/prometheus.yml
+#
+# Alert rules live in ./alerts/cloudops-alerts.yml. If you want the rules loaded
+# inside docker-compose, add this bind mount to the prometheus service:
+#   - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: cloudops
+    environment: development
+
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: prometheus
+
+  # CloudOps Hub API (Express, port 4000)
+  - job_name: api
+    metrics_path: /metrics
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['api:4000']
+        labels:
+          service: api
+          component: backend
+
+  # Node exporter (host metrics: cpu, memory, disk, network)
+  - job_name: node-exporter
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: node-exporter
+
+  # cAdvisor (container metrics) - optional, only started when enabled
+  - job_name: cadvisor
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: cadvisor
+
+  # Grafana exposes its own metrics on /metrics
+  - job_name: grafana
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          service: grafana
